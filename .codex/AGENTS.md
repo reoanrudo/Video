@@ -1,3 +1,5 @@
+
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
@@ -654,6 +656,31 @@ Body: { "analysis": <analysis-json> }
 5) Tests:
    - Feature tests for API.
    - Golden-file tests for KVA import/export.
+
+## Spec参照ルール
+- `.codex/docs/specs/` が実体で、`.kiro/specs` はシンボリックリンクです。Codex/Cursor には `docs/specs/...` ではなく `.codex/docs/specs/...` を読ませてください。
+- 実装/対応前に必ず「.codex/docs/specs/<spec-name>」配下の `requirements.md`, `design.md`, `tasks.md` を読み、判断とする。Spec名は `analysis-core`, `editor-mvp`, `kva-compat` の3つ。
+- 以降の実装判断は `tasks.md` を最優先とし、矛盾があれば実装ではなく Spec の修正提案を行う。
+- Codexへの依頼時には `#spec:<spec-name>` を使って対象タスクを指定し、Task完了後には `php artisan test`（必要なら `npm run build`）を実行する。
+- Kinovea GPL v2コードの流用は禁止。KVA仕様の理解と fixture生成による互換を徹底すること。
+
+## Kinovea GitHub参照（必須）
+- Kinovea リポジトリは `third_party/kinovea/` に submodule として配置済み（または配置する）。
+- 実装前に、該当機能に関連する Kinovea の実装・データ構造・挙動を `third_party/kinovea/` で調査して要件化する。
+- ただし Kinovea は GPL v2 のため、Kinovea のソースコードをコピー、翻訳、移植、または構造的に類似する形で再利用しない。
+  - 許可されるのは「挙動理解」「テスト用KVA生成」「仕様互換のクリーン実装」である。
+- PR/差分説明には「参照した Kinovea 側のファイルパス（例: third_party/kinovea/...）と観察した挙動」を必ず記録する（コードの転載はしない）。
+
+## 描画機能（最優先）
+- 座標は動画ピクセル座標で保存。Canvas座標保存は禁止。
+- object-fit: contain のレターボックス補正を含む video→canvas 変換を共通化し、
+  描画、ヒットテスト、編集ハンドルを同一変換で統一する。
+- 角度/距離/矢尻ベクトル/座標変換は pure function として切り出し unit test で固定する。
+
+## 必読ドキュメント
+- 描画関連の実装/修正を始める前に、必ず `.codex/docs/drawing-engine.md` を読むこと。
+- KVA関連の実装/修正を始める前に、必ず `.codex/docs/kva-mapping.md` を読むこと。
+- 変更後は、tests/Unit/Geometry/CanvasMapperTest.php と tests/Feature/Kva/KvaExportTest.php（または類似の golden test）を追加・更新し、`php artisan test` を必ず通すこと。
 
 ## Required commands before finishing any task
 - composer install

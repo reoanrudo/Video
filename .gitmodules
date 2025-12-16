@@ -1,0 +1,3 @@
+[submodule "third_party/kinovea"]
+	path = third_party/kinovea
+	url = https://github.com/Kinovea/Kinovea.git

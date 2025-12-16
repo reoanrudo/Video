@@ -1,3 +1,5 @@
+
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
@@ -39,6 +41,7 @@ This application is a Laravel application and its main Laravel ecosystems packag
 
 ## Replies
 - Be concise in your explanations - focus on what's important rather than explaining obvious details.
+- すべての返答は日本語で行うこと。
 
 ## Documentation Files
 - You must only create documentation files if explicitly requested by the user.
@@ -601,3 +604,86 @@ $pages->assertNoJavascriptErrors()->assertNoConsoleLogs();
 | decoration-slice | box-decoration-slice |
 | decoration-clone | box-decoration-clone |
 </laravel-boost-guidelines>
+
+# Project summary
+Video coaching / motion analysis web app.
+Stack: Laravel 11 + Livewire Volt + Alpine.js + Tailwind + MariaDB.
+Core: HTML5 Video + Canvas overlay annotations.
+Persistence: single JSON document `projects.analysis_json` using schema `videocoach.analysis@1.0.0`.
+Goal: KVA (Kinovea) import/export compatibility via adapters/profiles.
+
+## Critical legal / licensing constraint (must follow)
+- Kinovea is GPL v2. Do NOT copy/translate/adapt Kinovea source code into this project unless we explicitly decide to license our distributed code under GPL v2 compatible terms.
+- You MAY use Kinovea as a reference in the following ways:
+  1) Read official documentation and reference manual to understand KVA semantics.
+  2) Generate sample .kva files with Kinovea and use them as test fixtures ("golden files").
+  3) Inspect Kinovea source code ONLY to understand behavior, then re-implement clean-room.
+- If any task would require direct reuse of Kinovea code, STOP and propose an alternative clean-room approach.
+
+## How to "use Kinovea heavily" (required)
+1) Use Kinovea docs to derive requirements:
+   - KVA is an XML-based annotation file (.kva).
+   - KVA stores key images, drawings, trajectories/tracks, stopwatches, time origin, coordinate system calibration, etc.
+2) Create golden fixtures:
+   - Produce minimal KVA files using Kinovea for each tool: marker/cross, line/arrow, angle, grid/plane, text, stopwatch, trajectories (later).
+   - Save them under `tests/Fixtures/kva/` and write tests for import->export round-trip.
+3) Build a mapping table:
+   - Maintain `docs/kva-mapping.md` that maps our internal JSON schema to KVA nodes.
+   - Preserve unknown KVA nodes/attrs into `analysis.extensions.kvaPassthrough` for round-trip safety.
+4) Prefer behavior parity over internal similarity:
+   - Match how Kinovea stores and reloads "screen state" elements (working zone, time origin, etc.) even if our UI is simpler.
+
+## Volt / Livewire rules
+- Canvas/Video region is JS-managed; must be wrapped in `wire:ignore` to avoid Livewire DOM interference.
+- Use Volt pages (single-file components) for layout and panels; keep high-frequency editor logic in JS modules.
+
+## API contract (single source of truth)
+- GET  /api/projects/{project}/analysis
+- PUT  /api/projects/{project}/analysis
+Body: { "analysis": <analysis-json> }
+
+## Data contract (videocoach.analysis@1.0.0)
+- Required: schema{name,version}, video{}, workingZone{}, keyframes[], drawings[], extensions.kvaPassthrough{}.
+- Coordinates must be persisted in VIDEO pixel coordinates (not canvas CSS pixels). Rendering converts video->canvas based on object-fit letterboxing.
+
+## Tasks to execute (in order)
+1) MariaDB migrations: add `analysis_schema_version`, `analysis_json`, optional `analysis_kva_raw` to projects.
+2) Implement ProjectAnalysisController (GET/PUT) + FormRequest validation.
+3) Implement Volt editor page (minimal Google-like UI) + JS editor module.
+4) Implement KVA adapters:
+   - `app/Support/Kva/V2/KvaV2Profile.php` import/export for Keyframes + basic drawings (Cross/Marker, Line, Angle, Plane/Grid).
+   - Unknown node passthrough preservation.
+5) Tests:
+   - Feature tests for API.
+   - Golden-file tests for KVA import/export.
+
+## Spec参照ルール
+- `.codex/docs/specs/` が実体で、`.kiro/specs` はシンボリックリンクです。Codex/Cursor には `docs/specs/...` ではなく `.codex/docs/specs/...` を読ませてください。
+- 実装/対応前に必ず「.codex/docs/specs/<spec-name>」配下の `requirements.md`, `design.md`, `tasks.md` を読み、判断とする。Spec名は `analysis-core`, `editor-mvp`, `kva-compat` の3つ。
+- 以降の実装判断は `tasks.md` を最優先とし、矛盾があれば実装ではなく Spec の修正提案を行う。
+- Codexへの依頼時には `#spec:<spec-name>` を使って対象タスクを指定し、Task完了後には `php artisan test`（必要なら `npm run build`）を実行する。
+- Kinovea GPL v2コードの流用は禁止。KVA仕様の理解と fixture生成による互換を徹底すること。
+
+## Kinovea GitHub参照（必須）
+- Kinovea リポジトリは `third_party/kinovea/` に submodule として配置済み（または配置する）。
+- 実装前に、該当機能に関連する Kinovea の実装・データ構造・挙動を `third_party/kinovea/` で調査して要件化する。
+- ただし Kinovea は GPL v2 のため、Kinovea のソースコードをコピー、翻訳、移植、または構造的に類似する形で再利用しない。
+  - 許可されるのは「挙動理解」「テスト用KVA生成」「仕様互換のクリーン実装」である。
+- PR/差分説明には「参照した Kinovea 側のファイルパス（例: third_party/kinovea/...）と観察した挙動」を必ず記録する（コードの転載はしない）。
+
+## 描画機能（最優先）
+- 座標は動画ピクセル座標で保存。Canvas座標保存は禁止。
+- object-fit: contain のレターボックス補正を含む video→canvas 変換を共通化し、
+  描画、ヒットテスト、編集ハンドルを同一変換で統一する。
+- 角度/距離/矢尻ベクトル/座標変換は pure function として切り出し unit test で固定する。
+
+## 必読ドキュメント
+- 描画関連の実装/修正を始める前に、必ず `.codex/docs/drawing-engine.md` を読むこと。
+- KVA関連の実装/修正を始める前に、必ず `.codex/docs/kva-mapping.md` を読むこと。
+- 変更後は、tests/Unit/Geometry/CanvasMapperTest.php と tests/Feature/Kva/KvaExportTest.php（または類似の golden test）を追加・更新し、`php artisan test` を必ず通すこと。
+
+## Required commands before finishing any task
+- composer install
+- npm ci
+- php artisan migrate
+- php artisan test
