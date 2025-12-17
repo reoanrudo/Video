@@ -1,3 +1,6 @@
+const DEFAULT_VIDEO_WIDTH = 1920;
+const DEFAULT_VIDEO_HEIGHT = 1080;
+
 const computeVideoRectInCanvas = (canvasCssWidth, canvasCssHeight, videoWidth, videoHeight) => {
   if (videoWidth <= 0 || videoHeight <= 0) {
     return {
@@ -51,4 +54,31 @@ const canvasToVideo = (cx, cy, rect, devicePixelRatio, videoWidth, videoHeight) 
   };
 };
 
-export { computeVideoRectInCanvas, videoToCanvas, canvasToVideo };
+const buildMapper = (canvas, video, fallbackSize = { width: DEFAULT_VIDEO_WIDTH, height: DEFAULT_VIDEO_HEIGHT }) => {
+  const dpr = window.devicePixelRatio || 1;
+  const canvasCssWidth = canvas?.clientWidth ?? 0;
+  const canvasCssHeight = canvas?.clientHeight ?? 0;
+  const videoWidth = video?.videoWidth || fallbackSize.width;
+  const videoHeight = video?.videoHeight || fallbackSize.height;
+  const rect = computeVideoRectInCanvas(canvasCssWidth, canvasCssHeight, videoWidth, videoHeight);
+
+  const backingWidth = Math.max(1, Math.round(canvasCssWidth * dpr));
+  const backingHeight = Math.max(1, Math.round(canvasCssHeight * dpr));
+  if (canvas && (canvas.width !== backingWidth || canvas.height !== backingHeight)) {
+    canvas.width = backingWidth;
+    canvas.height = backingHeight;
+  }
+
+  return {
+    rect,
+    dpr,
+    videoWidth,
+    videoHeight,
+    canvasCssWidth,
+    canvasCssHeight,
+    canvasWidth: canvas?.width ?? 0,
+    canvasHeight: canvas?.height ?? 0,
+  };
+};
+
+export { computeVideoRectInCanvas, videoToCanvas, canvasToVideo, buildMapper, DEFAULT_VIDEO_WIDTH, DEFAULT_VIDEO_HEIGHT };

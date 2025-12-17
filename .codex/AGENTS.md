@@ -671,6 +671,11 @@ Body: { "analysis": <analysis-json> }
   - 許可されるのは「挙動理解」「テスト用KVA生成」「仕様互換のクリーン実装」である。
 - PR/差分説明には「参照した Kinovea 側のファイルパス（例: third_party/kinovea/...）と観察した挙動」を必ず記録する（コードの転載はしない）。
 
+## Kinovea参照パス（固定）
+- 参照対象は常に `third_party/kinovea/`（本リポジトリのルート配下）。Cursor/Codex のワークスペースにこのディレクトリを含め、ignore しないこと。
+- 描画実装に着手する前に、`third_party/kinovea/` 内を検索し、参照したファイルパス一覧を作業ログに残すこと。
+- GPL v2 につき、コードのコピー/翻訳移植は禁止。挙動理解と KVA fixture 生成のみ可。
+
 ## 描画機能（最優先）
 - 座標は動画ピクセル座標で保存。Canvas座標保存は禁止。
 - object-fit: contain のレターボックス補正を含む video→canvas 変換を共通化し、

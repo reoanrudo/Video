@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\ProjectAnalysisController;
+use App\Http\Controllers\ProjectController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 use Livewire\Volt\Volt;
@@ -8,7 +10,7 @@ Route::get('/', function () {
     return view('welcome');
 })->name('home');
 
-Route::view('dashboard', 'dashboard')
+Route::get('dashboard', [ProjectController::class, 'index'])
     ->middleware(['auth', 'verified'])
     ->name('dashboard');
 
@@ -29,4 +31,15 @@ Route::middleware(['auth'])->group(function () {
             ),
         )
         ->name('two-factor.show');
+
+    Route::post('projects', [ProjectController::class, 'store'])
+        ->name('projects.store');
+
+    Route::get('editor/{project}', [ProjectController::class, 'editor'])
+        ->name('editor.show');
+
+    Route::get('api/projects/{project}/analysis', [ProjectAnalysisController::class, 'show'])
+        ->name('projects.analysis.show');
+    Route::put('api/projects/{project}/analysis', [ProjectAnalysisController::class, 'update'])
+        ->name('projects.analysis.update');
 });
