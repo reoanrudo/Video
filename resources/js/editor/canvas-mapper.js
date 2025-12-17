@@ -56,8 +56,18 @@ const canvasToVideo = (cx, cy, rect, devicePixelRatio, videoWidth, videoHeight) 
 
 const buildMapper = (canvas, video, fallbackSize = { width: DEFAULT_VIDEO_WIDTH, height: DEFAULT_VIDEO_HEIGHT }) => {
   const dpr = window.devicePixelRatio || 1;
-  const canvasCssWidth = canvas?.clientWidth ?? 0;
-  const canvasCssHeight = canvas?.clientHeight ?? 0;
+  const rectCss = canvas?.getBoundingClientRect();
+  // コンテナが未レイアウトで width/height が 0 になる場合に備え、段階的にフォールバック
+  const canvasCssWidth =
+    rectCss?.width ||
+    canvas?.clientWidth ||
+    video?.clientWidth ||
+    fallbackSize.width;
+  const canvasCssHeight =
+    rectCss?.height ||
+    canvas?.clientHeight ||
+    video?.clientHeight ||
+    fallbackSize.height;
   const videoWidth = video?.videoWidth || fallbackSize.width;
   const videoHeight = video?.videoHeight || fallbackSize.height;
   const rect = computeVideoRectInCanvas(canvasCssWidth, canvasCssHeight, videoWidth, videoHeight);

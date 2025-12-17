@@ -4,6 +4,12 @@ const DEFAULT_STYLE = {
   color: "#2563eb",
   lineWidth: 2,
   opacity: 1,
+  dash: false,
+  dashLength: 8,
+  dashGap: 8,
+  squiggleAmplitude: 4,
+  squiggleWavelength: 12,
+  curvature: 0.3,
 };
 
 const createInitialAnalysis = () => ({
@@ -15,12 +21,31 @@ const createInitialAnalysis = () => ({
   meta: {},
 });
 
-const normalizeDrawing = (drawing) => ({
-  id: drawing.id ?? crypto.randomUUID(),
-  type: drawing.type,
-  geometry: drawing.geometry ?? {},
-  style: { ...DEFAULT_STYLE, ...(drawing.style ?? {}) },
-});
+const normalizeDrawing = (drawing) => {
+  const withVariant = { ...drawing };
+  if (withVariant.type === "arrow" && !withVariant.variant) withVariant.variant = "normal";
+  if (withVariant.type === "angle" && !withVariant.variant) withVariant.variant = "three_point";
+   if (withVariant.type === "text") {
+    withVariant.geometry = {
+      content: "Text",
+      fontSize: 16,
+      ...(withVariant.geometry ?? {}),
+    };
+  }
+  if (withVariant.type === "stamp") {
+    withVariant.geometry = {
+      name: "★",
+      ...(withVariant.geometry ?? {}),
+    };
+  }
+  return {
+    id: withVariant.id ?? crypto.randomUUID(),
+    type: withVariant.type,
+    variant: withVariant.variant,
+    geometry: withVariant.geometry ?? {},
+    style: { ...DEFAULT_STYLE, ...(withVariant.style ?? {}) },
+  };
+};
 
 const normalizeAnalysis = (analysis) => {
   const base = analysis ?? createInitialAnalysis();

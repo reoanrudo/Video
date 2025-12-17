@@ -1,5 +1,15 @@
 import { buildMapper, videoToCanvas } from "./canvas-mapper";
-import { angleDeg, arrowHead, distance } from "./geometry";
+import {
+  angleDeg,
+  angleToHorizontal,
+  angleToVertical,
+  arrowHead,
+  arrowHeadVectors,
+  distance,
+  sampleQuadraticBezier,
+  samplePolyline,
+  squigglyPoints,
+} from "./geometry";
 
 const schedule = (fn) => {
   let rafId = null;
@@ -277,6 +287,9 @@ const applyStyle = (ctx, drawing, dpr) => {
   const color = drawing.style?.color ?? "#3b82f6";
   const opacity = drawing.style?.opacity ?? 1;
   const lineWidth = drawing.style?.lineWidth ?? 2;
+  const dashLength = drawing.style?.dashLength ?? 8;
+  const dashGap = drawing.style?.dashGap ?? 8;
+  const dash = drawing.style?.dash ?? false;
 
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
@@ -284,6 +297,35 @@ const applyStyle = (ctx, drawing, dpr) => {
   ctx.lineWidth = lineWidth * dpr;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
+  ctx.setLineDash(dash ? [dashLength * dpr, dashGap * dpr] : []);
+};
+
+const drawArrowPolyline = (ctx, points, lineWidth, dpr) => {
+  if (points.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke();
+  const tail = points[points.length - 2];
+  const head = points[points.length - 1];
+  const { left, right } = arrowHead(tail, head, 8 * lineWidth * dpr);
+  ctx.beginPath();
+  ctx.moveTo(head.x, head.y);
+  ctx.lineTo(left.x, left.y);
+  ctx.lineTo(right.x, right.y);
+  ctx.closePath();
+  ctx.fill();
+};
+
+const deriveCurveControl = (start, end, curvature = 0.3) => {
+  const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const offset = len * curvature;
+  return { x: mid.x + nx * offset, y: mid.y + ny * offset };
 };
 
 const Renderer = (canvas, video, store, getSelection, getDebugState) => {
@@ -342,13 +384,74 @@ const Renderer = (canvas, video, store, getSelection, getDebugState) => {
           break;
         }
         case "arrow": {
-          const [a, b] = projectPoints(mapper, [drawing.geometry.start, drawing.geometry.end]);
-          if (drawing.style?.dash) ctx.setLineDash([8 * mapper.dpr, 8 * mapper.dpr]);
-          drawLine(ctx, a, b, true, lineWidth, mapper.dpr);
-          const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          const variant = drawing.variant ?? "normal";
+          const style = drawing.style ?? {};
+          const lw = drawing.style?.lineWidth ?? 2;
+          const startVid = drawing.geometry.start;
+          const endVid = drawing.geometry.end;
+          const dashArray = style.dash ? [style.dashLength * mapper.dpr, style.dashGap * mapper.dpr] : [];
+          let canvasPoints = [];
+
+          if (variant === "curve") {
+            const controlVid = drawing.geometry.control ?? deriveCurveControl(startVid, endVid, style.curvature ?? 0.3);
+            const sampledVid = sampleQuadraticBezier(startVid, controlVid, endVid, 6);
+            canvasPoints = projectPoints(mapper, sampledVid);
+            ctx.setLineDash(dashArray);
+            drawArrowPolyline(ctx, canvasPoints, lw, mapper.dpr);
+            if (selected) drawHandles(ctx, projectPoints(mapper, [startVid, controlVid, endVid]), mapper.dpr);
+          } else if (variant.startsWith("polyline")) {
+            const ptsVid = drawing.geometry.points ?? [startVid, endVid];
+            let sampledVid = [];
+            if (variant === "polyline_squiggly") {
+              for (let i = 0; i < ptsVid.length - 1; i++) {
+                const seg = squigglyPoints(
+                  ptsVid[i],
+                  ptsVid[i + 1],
+                  style.squiggleWavelength ?? 12,
+                  style.squiggleAmplitude ?? 4
+                );
+                if (i > 0) seg.shift();
+                sampledVid.push(...seg);
+              }
+            } else {
+              sampledVid = samplePolyline(ptsVid, 6);
+            }
+            canvasPoints = projectPoints(mapper, sampledVid);
+            const useDash = variant === "polyline_dash";
+            if (useDash) ctx.setLineDash(dashArray);
+            drawArrowPolyline(ctx, canvasPoints, lw, mapper.dpr);
+            if (selected) drawHandles(ctx, projectPoints(mapper, ptsVid), mapper.dpr);
+          } else if (variant === "squiggly") {
+            const sampledVid = squigglyPoints(
+              startVid,
+              endVid,
+              style.squiggleWavelength ?? 12,
+              style.squiggleAmplitude ?? 4
+            );
+            canvasPoints = projectPoints(mapper, sampledVid);
+            ctx.setLineDash([]);
+            drawArrowPolyline(ctx, canvasPoints, lw, mapper.dpr);
+            if (selected) drawHandles(ctx, projectPoints(mapper, [startVid, endVid]), mapper.dpr);
+          } else if (variant === "dash") {
+            ctx.setLineDash(dashArray);
+            const [a, b] = projectPoints(mapper, [startVid, endVid]);
+            drawLine(ctx, a, b, true, lw, mapper.dpr);
+            if (selected) drawHandles(ctx, [a, b], mapper.dpr);
+          } else {
+            ctx.setLineDash([]);
+            const [a, b] = projectPoints(mapper, [startVid, endVid]);
+            drawLine(ctx, a, b, true, lw, mapper.dpr);
+            if (selected) drawHandles(ctx, [a, b], mapper.dpr);
+          }
+
           const lenPx = Math.round(distance(drawing.geometry.start, drawing.geometry.end));
-          drawTag(ctx, `${lenPx} px`, mid, mapper.dpr);
-          if (selected) drawHandles(ctx, [a, b], mapper.dpr);
+          const midCanvas = canvasPoints.length
+            ? canvasPoints[Math.floor(canvasPoints.length / 2)]
+            : projectPoint(mapper, {
+                x: (drawing.geometry.start.x + drawing.geometry.end.x) / 2,
+                y: (drawing.geometry.start.y + drawing.geometry.end.y) / 2,
+              });
+          drawTag(ctx, `${lenPx} px`, midCanvas, mapper.dpr);
           break;
         }
         case "marker": {
@@ -366,7 +469,7 @@ const Renderer = (canvas, video, store, getSelection, getDebugState) => {
           const [p] = projectPoints(mapper, [drawing.geometry.position]);
           ctx.save();
           ctx.globalAlpha = drawing.style?.opacity ?? 1;
-          const fontSize = 14 * mapper.dpr;
+          const fontSize = (drawing.geometry?.fontSize ?? 14) * mapper.dpr;
           ctx.font = `${fontSize}px system-ui`;
 
           const label = drawing.type === "autonumber"
@@ -391,10 +494,27 @@ const Renderer = (canvas, video, store, getSelection, getDebugState) => {
           break;
         }
         case "angle": {
-          const pts = projectPoints(mapper, drawing.geometry.points);
-          // Kinovea形式: [A, O, B] - O が頂点
-          drawAngle(ctx, pts[0], pts[1], pts[2], mapper.dpr, drawing.style?.color ?? "#3b82f6", lineWidth);
-          if (selected) drawHandles(ctx, pts, mapper.dpr);
+          const variant = drawing.variant ?? "three_point";
+          if (variant === "three_point") {
+            const pts = projectPoints(mapper, drawing.geometry.points);
+            drawAngle(ctx, pts[0], pts[1], pts[2], mapper.dpr, drawing.style?.color ?? "#3b82f6", lineWidth);
+            if (selected) drawHandles(ctx, pts, mapper.dpr);
+          } else {
+            const ptsVid = drawing.geometry.points ?? [];
+            const a = ptsVid[0];
+            const b = ptsVid[1];
+            if (!a || !b) break;
+            const anchor = variant === "to_horizontal" ? { x: a.x + 100, y: a.y } : { x: a.x, y: a.y - 100 };
+            const proj = variant === "to_horizontal" ? { x: b.x, y: a.y } : { x: a.x, y: b.y };
+            const ptsCanvas = projectPoints(mapper, [b, a, proj]);
+            drawAngle(ctx, ptsCanvas[0], ptsCanvas[1], ptsCanvas[2], mapper.dpr, drawing.style?.color ?? "#3b82f6", lineWidth);
+            const deg =
+              variant === "to_horizontal"
+                ? Math.abs(angleToHorizontal(a, b)).toFixed(1)
+                : Math.abs(angleToVertical(a, b)).toFixed(1);
+            drawTag(ctx, `${deg}°`, ptsCanvas[1], mapper.dpr);
+            if (selected) drawHandles(ctx, projectPoints(mapper, [a, b]), mapper.dpr);
+          }
           break;
         }
         case "circle": {
@@ -409,8 +529,9 @@ const Renderer = (canvas, video, store, getSelection, getDebugState) => {
         case "stamp": {
           const [p] = projectPoints(mapper, [drawing.geometry.position]);
           ctx.save();
+          const label = drawing.geometry?.name ?? "★";
           ctx.font = `${18 * mapper.dpr}px system-ui`;
-          ctx.fillText("★", p.x, p.y);
+          ctx.fillText(label, p.x, p.y);
           ctx.restore();
           if (selected) drawHandles(ctx, [p], mapper.dpr);
           break;

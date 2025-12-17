@@ -10,6 +10,11 @@ Route::get('/', function () {
     return view('welcome');
 })->name('home');
 
+// コーチングノート（シングルページ版）
+Route::get('/coach', function () {
+    return view('coach');
+});
+
 Route::get('dashboard', [ProjectController::class, 'index'])
     ->middleware(['auth', 'verified'])
     ->name('dashboard');

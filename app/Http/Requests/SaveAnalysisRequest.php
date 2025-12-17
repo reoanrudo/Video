@@ -19,8 +19,17 @@ class SaveAnalysisRequest extends FormRequest
             'analysis.schema.name' => ['required', 'string', 'in:videocoach.analysis'],
             'analysis.schema.version' => ['required', 'string', 'in:1.0.0'],
             'analysis.drawings' => ['present', 'array'],
+            'analysis.drawings.*.id' => ['nullable', 'string'],
+            'analysis.drawings.*.type' => ['required', 'string'],
+            'analysis.drawings.*.geometry' => ['required', 'array'],
+            'analysis.drawings.*.style' => ['nullable', 'array'],
+            'analysis.drawings.*.variant' => ['nullable', 'string'],
             'analysis.keyframes' => ['present', 'array'],
+            'analysis.keyframes.*.time' => ['required', 'numeric', 'min:0'],
+            'analysis.keyframes.*.label' => ['nullable', 'string', 'max:255'],
             'analysis.extensions' => ['present', 'array'],
+            'analysis.origin' => ['sometimes', 'array:x,y'],
+            'analysis.meta' => ['nullable', 'array'],
         ];
     }
 }

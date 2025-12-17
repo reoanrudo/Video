@@ -47,11 +47,13 @@ const EditorApp = () => {
   // Elements
   const canvas = document.getElementById("editor-canvas");
   const video = document.getElementById("editor-video");
+  const videoContainer = document.getElementById("video-container");
   const videoInput = document.getElementById("video-input");
   const uploadArea = document.getElementById("upload-area");
   const videoControls = document.getElementById("video-controls");
   const videoName = document.getElementById("video-name");
   const saveBtn = document.getElementById("save-btn");
+  const openFileBtn = document.querySelector('label[for="video-input"]');
   const undoBtn = document.getElementById("undo-btn");
   const redoBtn = document.getElementById("redo-btn");
   const clearBtn = document.getElementById("clear-btn");
@@ -65,6 +67,13 @@ const EditorApp = () => {
   const styleOpacityInput = document.getElementById("style-opacity");
   const styleWidthValue = document.getElementById("style-width-value");
   const styleOpacityValue = document.getElementById("style-opacity-value");
+  const styleVariantArrow = document.getElementById("style-variant-arrow");
+  const styleVariantAngle = document.getElementById("style-variant-angle");
+  const styleTextContentInput = document.getElementById("style-text-content");
+  const styleTextSizeInput = document.getElementById("style-text-size");
+  const styleStampNameInput = document.getElementById("style-stamp-name");
+  const arrowVariantSelect = document.getElementById("arrow-variant");
+  const angleVariantSelect = document.getElementById("angle-variant");
   const keyframeBtn = document.getElementById("keyframe-btn");
   const keyframeList = document.getElementById("keyframe-list");
   const keyframeCount = document.getElementById("keyframe-count");
@@ -81,6 +90,7 @@ const EditorApp = () => {
   const speedVal = document.getElementById("speed-val");
   const timelineMarkers = document.getElementById("timeline-markers");
   const panelTabs = document.querySelectorAll(".editor-panel-tab");
+  const toastStack = document.getElementById("toast-stack");
 
   // Panels
   const keyframesPanel = document.getElementById("keyframes-panel");
@@ -118,7 +128,34 @@ const EditorApp = () => {
   let pendingNewDrawingId = null;
   let videoDuration = 0;
   let currentColor = "#3b82f6";
+  let arrowVariant = arrowVariantSelect?.value ?? "normal";
+  let angleVariant = angleVariantSelect?.value ?? "three_point";
   let videoReady = video?.videoWidth > 0 && video?.videoHeight > 0;
+  let lastPointerId = null;
+
+  const syncCanvasSize = () => {
+    if (!canvas || !videoContainer) return;
+    const rect = videoContainer.getBoundingClientRect();
+    let width = rect.width || video?.clientWidth || canvas?.clientWidth || 1;
+    let height = rect.height;
+    if (!height) {
+      if (video?.videoWidth && video?.videoHeight && width) {
+        // 動画のアスペクト比で高さを推定（縦0のときでも描画できるようにする）
+        height = width * (video.videoHeight / video.videoWidth);
+      } else {
+        height = video?.clientHeight || canvas?.clientHeight || 480;
+      }
+    }
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(width * dpr));
+    const h = Math.max(1, Math.round(height * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+  };
 
   const setVideoReady = () => {
     videoReady = Boolean(video?.videoWidth && video?.videoHeight);
@@ -139,12 +176,24 @@ const EditorApp = () => {
   const updateStylePanel = () => {
     const drawing = store.getDrawing(store.selectedId);
     const disabled = !drawing;
-    [styleColorPicker, styleWidthInput, styleOpacityInput].forEach((el) => {
+    [
+      styleColorPicker,
+      styleWidthInput,
+      styleOpacityInput,
+      styleVariantArrow,
+      styleVariantAngle,
+      styleTextContentInput,
+      styleTextSizeInput,
+      styleStampNameInput,
+    ].forEach((el) => {
       if (el) el.disabled = disabled;
     });
     if (!drawing) {
       if (styleWidthValue) styleWidthValue.textContent = "-";
       if (styleOpacityValue) styleOpacityValue.textContent = "-";
+      if (styleTextContentInput) styleTextContentInput.value = "";
+      if (styleTextSizeInput) styleTextSizeInput.value = 16;
+      if (styleStampNameInput) styleStampNameInput.value = "";
       return;
     }
     if (styleColorPicker) styleColorPicker.value = drawing.style?.color ?? "#3b82f6";
@@ -157,6 +206,29 @@ const EditorApp = () => {
       const op = drawing.style?.opacity ?? 1;
       styleOpacityInput.value = op;
       styleOpacityValue.textContent = op.toFixed(2);
+    }
+    if (styleVariantArrow) {
+      styleVariantArrow.disabled = drawing.type !== "arrow";
+      if (drawing.type === "arrow") styleVariantArrow.value = drawing.variant ?? "normal";
+    }
+    if (styleVariantAngle) {
+      styleVariantAngle.disabled = drawing.type !== "angle";
+      if (drawing.type === "angle") styleVariantAngle.value = drawing.variant ?? "three_point";
+    }
+    if (styleTextContentInput) {
+      const isText = drawing.type === "text" || drawing.type === "autonumber";
+      styleTextContentInput.disabled = !isText;
+      styleTextContentInput.value = isText ? drawing.geometry?.content ?? "" : "";
+    }
+    if (styleTextSizeInput) {
+      const isText = drawing.type === "text" || drawing.type === "autonumber";
+      styleTextSizeInput.disabled = !isText;
+      styleTextSizeInput.value = isText ? drawing.geometry?.fontSize ?? 16 : 16;
+    }
+    if (styleStampNameInput) {
+      const isStamp = drawing.type === "stamp";
+      styleStampNameInput.disabled = !isStamp;
+      styleStampNameInput.value = isStamp ? drawing.geometry?.name ?? "★" : "";
     }
   };
 
@@ -175,7 +247,35 @@ const EditorApp = () => {
     if (statusIndicator) statusIndicator.textContent = text;
   };
 
-  const markDirty = () => renderer();
+  const showToast = (title, body = "", variant = "info", ttl = 2800) => {
+    if (!toastStack) return;
+    const el = document.createElement("div");
+    el.className = "editor-toast";
+    el.dataset.variant = variant;
+    el.innerHTML = `
+      <div class="editor-toast-title">${title}</div>
+      ${body ? `<div class="editor-toast-body">${body}</div>` : ""}
+    `;
+    toastStack.appendChild(el);
+    requestAnimationFrame(() => {
+      el.dataset.show = "true";
+    });
+    const remove = () => {
+      el.dataset.show = "false";
+      setTimeout(() => el.remove(), 220);
+    };
+    const timer = setTimeout(remove, ttl);
+    el.addEventListener("click", () => {
+      clearTimeout(timer);
+      remove();
+    });
+  };
+
+  const markDirty = () => {
+    // キャンバス寸法が変わっていても確実に再描画されるようここで同期する
+    syncCanvasSize();
+    renderer();
+  };
 
   const setTool = (tool) => {
     store.setTool(tool);
@@ -205,6 +305,13 @@ const EditorApp = () => {
       store.setStyle(store.selectedId, { color: currentColor });
       markDirty();
     }
+  });
+
+  arrowVariantSelect?.addEventListener("change", (e) => {
+    arrowVariant = e.target.value;
+  });
+  angleVariantSelect?.addEventListener("change", (e) => {
+    angleVariant = e.target.value;
   });
 
   setTool("select");
@@ -324,9 +431,22 @@ const EditorApp = () => {
     switch (drawing.type) {
       case "line":
       case "arrow": {
-        const pts = [drawing.geometry.start, drawing.geometry.end];
-        const idx = pts.findIndex((p) => dist(p) <= threshold);
-        if (idx !== -1) return { id: drawing.id, mode: idx === 0 ? "start" : "end" };
+        const variant = drawing.variant ?? "normal";
+        if (variant === "curve") {
+          const pts = [drawing.geometry.start, drawing.geometry.control ?? drawing.geometry.end, drawing.geometry.end];
+          const idx = pts.findIndex((p) => dist(p) <= threshold);
+          if (idx === 0) return { id: drawing.id, mode: "start" };
+          if (idx === 1) return { id: drawing.id, mode: "control" };
+          if (idx === 2) return { id: drawing.id, mode: "end" };
+        } else if (variant.startsWith("polyline")) {
+          const pts = drawing.geometry.points ?? [drawing.geometry.start, drawing.geometry.end];
+          const idx = pts.findIndex((p) => dist(p) <= threshold);
+          if (idx !== -1) return { id: drawing.id, mode: idx };
+        } else {
+          const pts = [drawing.geometry.start, drawing.geometry.end];
+          const idx = pts.findIndex((p) => dist(p) <= threshold);
+          if (idx !== -1) return { id: drawing.id, mode: idx === 0 ? "start" : "end" };
+        }
         break;
       }
       case "marker":
@@ -335,7 +455,8 @@ const EditorApp = () => {
         if (dist(drawing.geometry.position) <= threshold) return { id: drawing.id, mode: "move" };
         break;
       case "angle": {
-        const idx = drawing.geometry.points.findIndex((p) => dist(p) <= threshold);
+        const pts = drawing.geometry.points ?? [];
+        const idx = pts.findIndex((p) => dist(p) <= threshold);
         if (idx !== -1) return { id: drawing.id, mode: idx };
         break;
       }
@@ -366,9 +487,10 @@ const EditorApp = () => {
 
   const handlePointerDown = (e) => {
     if (!canvas || !video) return;
-    if (!videoReady) {
-      setStatus("動画読み込み中...");
-      return;
+    lastPointerId = e.pointerId ?? null;
+    // ポインターキャプチャでドラッグ中の move を確実に受け取る
+    if (canvas.setPointerCapture) {
+      canvas.setPointerCapture(e.pointerId);
     }
     const { point, mapper, pointer } = mapClientToVideo(e, canvas, video);
     debugState.pointer = pointer;
@@ -420,7 +542,7 @@ const EditorApp = () => {
       case "stamp": {
         const id = store.addDrawing({
           type: "stamp",
-          geometry: { position: point },
+          geometry: { position: point, name: styleStampNameInput?.value || "★" },
           style: { color: currentColor },
         });
         store.select(id);
@@ -445,9 +567,16 @@ const EditorApp = () => {
         break;
       }
       case "arrow": {
+        const geometry =
+          arrowVariant === "curve"
+            ? { start: point, end: point, control: point }
+            : arrowVariant.startsWith("polyline")
+            ? { start: point, end: point, points: [point, point] }
+            : { start: point, end: point };
         const id = store.addDrawing({
           type: "arrow",
-          geometry: { start: point, end: point },
+          variant: arrowVariant,
+          geometry,
           style: { color: currentColor },
         });
         store.select(id);
@@ -460,9 +589,14 @@ const EditorApp = () => {
         isDrawing = false;
         break;
       case "angle": {
+        const geom =
+          angleVariant === "three_point"
+            ? { points: [point, point, point] }
+            : { points: [point, point] };
         const id = store.addDrawing({
           type: "angle",
-          geometry: { points: [point, point, point] },
+          variant: angleVariant,
+          geometry: geom,
           style: { color: currentColor },
         });
         store.select(id);
@@ -474,7 +608,7 @@ const EditorApp = () => {
         if (content) {
           const id = store.addDrawing({
             type: "text",
-            geometry: { position: point, content },
+            geometry: { position: point, content, fontSize: 16 },
             style: { color: currentColor },
           });
           store.select(id);
@@ -490,7 +624,7 @@ const EditorApp = () => {
   };
 
   const handlePointerMove = (e) => {
-    if (!canvas || !video || !videoReady) return;
+    if (!canvas || !video) return;
     const { point, mapper, pointer } = mapClientToVideo(e, canvas, video);
     debugState.pointer = pointer;
     debugState.mapper = mapper;
@@ -510,11 +644,40 @@ const EditorApp = () => {
           const g = d.geometry;
           switch (d.type) {
             case "line":
-            case "arrow":
+            case "arrow": {
+              const variant = d.variant ?? "normal";
               if (activeHandle.mode === "move") {
                 const dx = point.x - g.start.x;
                 const dy = point.y - g.start.y;
-                return { geometry: { ...g, start: point, end: { x: g.end.x + dx, y: g.end.y + dy } } };
+                const moved = { ...g, start: point, end: { x: g.end.x + dx, y: g.end.y + dy } };
+                if (variant === "curve") {
+                  moved.control = { x: (g.control?.x ?? g.end.x) + dx, y: (g.control?.y ?? g.end.y) + dy };
+                }
+                if (variant.startsWith("polyline")) {
+                  const pts = g.points ?? [g.start, g.end];
+                  moved.points = pts.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+                  moved.start = moved.points[0];
+                  moved.end = moved.points[moved.points.length - 1];
+                }
+                return { geometry: moved };
+              }
+              if (variant === "curve") {
+                return {
+                  geometry: {
+                    ...g,
+                    start: activeHandle.mode === "start" ? point : g.start,
+                    end: activeHandle.mode === "end" ? point : g.end,
+                    control: activeHandle.mode === "control" ? point : g.control ?? g.end,
+                  },
+                };
+              }
+              if (variant.startsWith("polyline")) {
+                const pts = g.points ?? [g.start, g.end];
+                if (typeof activeHandle.mode === "number") {
+                  const next = [...pts];
+                  next[activeHandle.mode] = point;
+                  return { geometry: { ...g, points: next, start: next[0], end: next[next.length - 1] } };
+                }
               }
               return {
                 geometry: {
@@ -523,6 +686,7 @@ const EditorApp = () => {
                   end: activeHandle.mode === "end" ? point : g.end,
                 },
               };
+            }
             case "marker":
             case "text":
             case "autonumber":
@@ -644,6 +808,13 @@ const EditorApp = () => {
     debugState.isDrawing = false;
     activeHandle = null;
     resetEditSnapshot();
+    if (canvas?.releasePointerCapture && typeof lastPointerId === "number") {
+      try {
+        canvas.releasePointerCapture(lastPointerId);
+      } catch (_) {
+        // ignore
+      }
+    }
     if (pendingNewDrawingId) {
       const time = video?.currentTime ?? 0;
       maybeAddKeyframe(time, "auto");
@@ -654,7 +825,8 @@ const EditorApp = () => {
   };
 
   canvas?.addEventListener("pointerdown", handlePointerDown);
-  window.addEventListener("pointermove", handlePointerMove);
+  // ポインターキャプチャを使うので move はキャンバスに付ける
+  canvas?.addEventListener("pointermove", handlePointerMove);
   window.addEventListener("pointerup", handlePointerUp);
 
   undoBtn?.addEventListener("click", () => {
@@ -725,24 +897,94 @@ const EditorApp = () => {
     markDirty();
   });
 
+  styleVariantArrow?.addEventListener("change", (event) => {
+    if (!store.selectedId) return;
+    store.updateDrawing(store.selectedId, (d) => ({ variant: event.target.value }));
+    markDirty();
+  });
+
+  styleVariantAngle?.addEventListener("change", (event) => {
+    if (!store.selectedId) return;
+    store.updateDrawing(store.selectedId, (d) => ({ variant: event.target.value }));
+    markDirty();
+  });
+
+  styleTextContentInput?.addEventListener("input", (event) => {
+    if (!store.selectedId) return;
+    const val = event.target.value;
+    store.updateDrawing(store.selectedId, (d) => ({ geometry: { ...d.geometry, content: val } }), { snapshot: false, replace: true });
+    markDirty();
+  });
+  styleTextContentInput?.addEventListener("change", (event) => {
+    if (!store.selectedId) return;
+    const val = event.target.value;
+    store.updateDrawing(store.selectedId, (d) => ({ geometry: { ...d.geometry, content: val } }), { snapshot: true, replace: true });
+  });
+
+  styleTextSizeInput?.addEventListener("input", (event) => {
+    if (!store.selectedId) return;
+    const val = Number(event.target.value);
+    store.updateDrawing(store.selectedId, (d) => ({ geometry: { ...d.geometry, fontSize: val } }), { snapshot: false, replace: true });
+    markDirty();
+  });
+  styleTextSizeInput?.addEventListener("change", (event) => {
+    if (!store.selectedId) return;
+    const val = Number(event.target.value);
+    store.updateDrawing(store.selectedId, (d) => ({ geometry: { ...d.geometry, fontSize: val } }), { snapshot: true, replace: true });
+  });
+
+  styleStampNameInput?.addEventListener("input", (event) => {
+    if (!store.selectedId) return;
+    const val = event.target.value || "★";
+    store.updateDrawing(store.selectedId, (d) => ({ geometry: { ...d.geometry, name: val } }), { snapshot: false, replace: true });
+    markDirty();
+  });
+  styleStampNameInput?.addEventListener("change", (event) => {
+    if (!store.selectedId) return;
+    const val = event.target.value || "★";
+    store.updateDrawing(store.selectedId, (d) => ({ geometry: { ...d.geometry, name: val } }), { snapshot: true, replace: true });
+  });
+
   saveBtn?.addEventListener("click", async () => {
     const putUrl = root.dataset.apiPut;
+    if (!putUrl) return;
     setStatus("Saving...");
-    const res = await fetch(putUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.content ?? "",
-      },
-      body: JSON.stringify({ analysis: store.analysis }),
-    });
-    setStatus(res.ok ? "Saved" : "Save failed");
+    saveBtn.disabled = true;
+    saveBtn.textContent = "保存中...";
+    try {
+      const res = await fetch(putUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.content ?? "",
+        },
+        body: JSON.stringify({ analysis: store.analysis }),
+      });
+      if (!res.ok) {
+        const msg = res.status === 422 ? "データ形式が正しくありません" : `保存に失敗しました (${res.status})`;
+        setStatus("Save failed");
+        showToast("保存に失敗しました", msg, "error");
+      } else {
+        setStatus("Saved");
+        showToast("保存しました", "描画とキーフレームを更新しました", "success");
+      }
+    } catch (e) {
+      console.error(e);
+      setStatus("Save failed");
+      showToast("保存に失敗しました", "ネットワークを確認してください", "error");
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "保存";
+    }
   });
 
   // Video file input
   videoInput?.addEventListener("change", (event) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      if (uploadArea) uploadArea.style.display = "flex";
+      return;
+    }
     const url = URL.createObjectURL(file);
     video.src = url;
     video.load();
@@ -751,12 +993,18 @@ const EditorApp = () => {
     if (videoControls) videoControls.style.display = "block";
   });
 
+  openFileBtn?.addEventListener("click", () => {
+    videoInput?.click();
+  });
+
   video?.addEventListener("loadedmetadata", () => {
     videoDuration = video.duration;
     if (seekBar) seekBar.max = videoDuration;
+    syncCanvasSize();
     markDirty();
     updateVideoTime();
     updateTimelineMarkers();
+    videoReady = true;
   });
 
   video?.addEventListener("timeupdate", () => {
@@ -848,7 +1096,17 @@ const EditorApp = () => {
     }
   });
 
-  window.addEventListener("resize", () => markDirty());
+  window.addEventListener("resize", () => {
+    syncCanvasSize();
+    markDirty();
+  });
+  if (videoContainer) {
+    const ro = new ResizeObserver(() => {
+      syncCanvasSize();
+      markDirty();
+    });
+    ro.observe(videoContainer);
+  }
 
   // Keyboard shortcuts
   window.addEventListener("keydown", (e) => {
@@ -900,6 +1158,7 @@ const EditorApp = () => {
     } catch (e) {
       console.warn("Failed to load analysis", e);
     }
+    syncCanvasSize();
     markDirty();
     renderKeyframes();
     renderDrawings();
